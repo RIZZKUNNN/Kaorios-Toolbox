@@ -7,6 +7,9 @@ on:
         description: 'Direct URL to framework.jar'
         required: true
 
+permissions:
+  contents: write
+
 jobs:
   patch:
     runs-on: ubuntu-latest
@@ -27,16 +30,30 @@ jobs:
       - name: Run Patcher
         run: |
           chmod +x Toolbox-patcher/scripts/patcher.sh
-          # The script expects to be run from Toolbox-patcher directory where tools are located
           cd Toolbox-patcher
-          # Copy framework.jar to current dir
           cp ../framework.jar .
           ./scripts/patcher.sh framework.jar
+          # Pastikan file hasil patch ada di direktori yang benar
+          # Misalnya script menghasilkan 'framework_patched.jar'
+          # Kita pindahkan ke root folder agar mudah diakses
+          mv framework_patched.jar ../framework_patched.jar || cp framework.jar ../framework_patched.jar
 
-      - name: Upload Patched Artifact
-        uses: actions/upload-artifact@v4
+      - name: Generate Release Tag
+        id: tag
+        run: |
+          echo "release_tag=Patch_$(date +'%Y%m%d_%H%M%S')" >> $GITHUB_OUTPUT
+
+      - name: Create Release and Upload
+        uses: softprops/action-gh-release@v2
         with:
-          name: framework-patched
-          path: |
-            Toolbox-patcher/framework_patched.jar
-            Toolbox-patcher/kaoriosFramework.zip
+          tag_name: ${{ steps.tag.outputs.release_tag }}
+          name: Framework Patch - ${{ steps.tag.outputs.release_tag }}
+          body: |
+            Automated patch for framework.jar
+            Source URL: ${{ github.event.inputs.framework_url }}
+          files: |
+            framework_patched.jar
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
