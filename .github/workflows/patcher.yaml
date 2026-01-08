@@ -11,7 +11,7 @@ on:
         required: true
         default: 'generic'
       os_version:
-        description: 'OS Version (e.g., Android 14, HyperOS 2.0)'
+        description: 'OS Version (e.g., Android-14, HyperOS-2.0)'
         required: true
         default: 'Android-14'
 
@@ -21,9 +21,9 @@ permissions:
 jobs:
   patch:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -31,46 +31,49 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Normalize vars
+        id: vars
+        run: |
+          OS_CLEAN=$(echo "${{ github.event.inputs.os_version }}" | tr ' ' '-')
+          echo "os_clean=$OS_CLEAN" >> $GITHUB_OUTPUT
+          echo "build_date=$(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_OUTPUT
+
       - name: Download framework.jar
         run: |
-          wget -O framework.jar "${{ github.event.inputs.framework_url }}"
+          curl -L --fail "${{ github.event.inputs.framework_url }}" -o framework.jar
 
       - name: Run Patcher
         run: |
+          set -e
           chmod +x Toolbox-patcher/scripts/patcher.sh
           cd Toolbox-patcher
           cp ../framework.jar .
           ./scripts/patcher.sh framework.jar
-          
-          # Cek apakah output zip tersedia di folder Toolbox-patcher
-          if [ -f "kaoriosFramework.zip" ]; then
-            # Rename agar unik: kaoriosFramework-codename-os.zip
-            mv kaoriosFramework.zip ../kaoriosFramework-${{ github.event.inputs.device_codename }}-${{ github.event.inputs.os_version }}.zip
-          else
-            echo "Error: kaoriosFramework.zip tidak ditemukan!"
+
+          if [ ! -f kaoriosFramework.zip ]; then
+            echo "Output zip not found!"
             exit 1
           fi
+
+          mv kaoriosFramework.zip \
+          ../kaoriosFramework-${{ github.event.inputs.device_codename }}-${{ steps.vars.outputs.os_clean }}.zip
 
       - name: Generate Release Tag
         id: tag
         run: |
-          TAG_NAME="${{ github.event.inputs.device_codename }}-${{ github.event.inputs.os_version }}-$(date +'%Y%m%d_%H%M%S')"
-          echo "release_tag=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "release_tag=${{ github.event.inputs.device_codename }}-${{ steps.vars.outputs.os_clean }}-$(date +'%Y%m%d_%H%M%S')" >> $GITHUB_OUTPUT
 
-      - name: Create Release and Upload
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.release_tag }}
-          name: "Patch: ${{ github.event.inputs.device_codename }} | ${{ github.event.inputs.os_version }}"
+          name: "Patch: ${{ github.event.inputs.device_codename }} | ${{ steps.vars.outputs.os_clean }}"
           body: |
             ### Detail Patching
             - **Device:** ${{ github.event.inputs.device_codename }}
-            - **OS Version:** ${{ github.event.inputs.os_version }}
-            - **Original File:** [framework.jar](${{ github.event.inputs.framework_url }})
-            - **Build Date:** $(date)
-          files: |
-            kaoriosFramework-*.zip
-          draft: false
-          prerelease: false
+            - **OS:** ${{ steps.vars.outputs.os_clean }}
+            - **Source:** framework.jar
+            - **Build Date:** ${{ steps.vars.outputs.build_date }}
+          files: kaoriosFramework-*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
